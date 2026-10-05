@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'storage_service.dart';
 
 class WorkerPayApp extends StatelessWidget {
   const WorkerPayApp({super.key});
@@ -10,7 +11,6 @@ class WorkerPayApp extends StatelessWidget {
       title: 'Worker Pay',
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: 'sans',
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF08658A),
         ),
@@ -41,6 +41,31 @@ class AttendanceData {
     this.otHours = 0,
     this.note = '',
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'status': status.name,
+      'normalHours': normalHours,
+      'otHours': otHours,
+      'note': note,
+    };
+  }
+
+  factory AttendanceData.fromJson(Map<String, dynamic> json) {
+    final statusName = json['status'] as String?;
+
+    final status = AttendanceStatus.values.firstWhere(
+      (value) => value.name == statusName,
+      orElse: () => AttendanceStatus.present,
+    );
+
+    return AttendanceData(
+      status: status,
+      normalHours: (json['normalHours'] as num?)?.toInt() ?? 8,
+      otHours: (json['otHours'] as num?)?.toInt() ?? 0,
+      note: json['note']?.toString() ?? '',
+    );
+  }
 }
 
 class WorkerPayHome extends StatefulWidget {
@@ -63,14 +88,85 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   double advance = 0;
   double deduction = 0;
 
-  String dateKey(DateTime date) =>
-      '${date.year}-${date.month}-${date.day}';
+  bool loading = true;
 
-  AttendanceData dataFor(DateTime date) {
-    return attendance.putIfAbsent(
-      dateKey(date),
-      () => AttendanceData(),
-    );
+  @override
+  void initState() {
+    super.initState();
+    loadSavedData();
+  }
+
+  String dateKey(DateTime date) {
+    return '${date.year}-${date.month}-${date.day}';
+  }
+
+  Future<void> loadSavedData() async {
+    final savedAttendance =
+        await StorageService.instance.loadAttendance();
+
+    final savedSettings =
+        await StorageService.instance.loadSettings();
+
+    if (!mounted) return;
+
+    setState(() {
+      attendance.clear();
+
+      savedAttendance.forEach((key, value) {
+        if (value is Map) {
+          attendance[key] = AttendanceData.fromJson(
+            Map<String, dynamic>.from(value),
+          );
+        }
+      });
+
+      monthlySalary =
+          (savedSettings['monthlySalary'] as num?)?.toDouble() ??
+              monthlySalary;
+
+      standardDays =
+          (savedSettings['standardDays'] as num?)?.toInt() ??
+              standardDays;
+
+      normalHours =
+          (savedSettings['normalHours'] as num?)?.toInt() ??
+              normalHours;
+
+      otRate =
+          (savedSettings['otRate'] as num?)?.toDouble() ??
+              otRate;
+
+      advance =
+          (savedSettings['advance'] as num?)?.toDouble() ??
+              advance;
+
+      deduction =
+          (savedSettings['deduction'] as num?)?.toDouble() ??
+              deduction;
+
+      loading = false;
+    });
+  }
+
+  Future<void> saveAttendanceData() async {
+    final data = <String, dynamic>{};
+
+    attendance.forEach((key, value) {
+      data[key] = value.toJson();
+    });
+
+    await StorageService.instance.saveAttendance(data);
+  }
+
+  Future<void> savePaymentSettings() async {
+    await StorageService.instance.saveSettings({
+      'monthlySalary': monthlySalary,
+      'standardDays': standardDays,
+      'normalHours': normalHours,
+      'otRate': otRate,
+      'advance': advance,
+      'deduction': deduction,
+    });
   }
 
   int get presentCount => attendance.values
@@ -100,7 +196,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       attendance.values.fold(0, (sum, e) => sum + e.otHours);
 
   double get dailyWage =>
-      standardDays == 0 ? 0 : monthlySalary / standardDays;
+      standardDays <= 0 ? 0 : monthlySalary / standardDays;
 
   double get basicPayment {
     double total = 0;
@@ -170,7 +266,16 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   }
 
   void openAttendance(DateTime date) {
-    final data = dataFor(date);
+    final oldData = attendance[dateKey(date)];
+
+    final data = oldData == null
+        ? AttendanceData()
+        : AttendanceData(
+            status: oldData.status,
+            normalHours: oldData.normalHours,
+            otHours: oldData.otHours,
+            note: oldData.note,
+          );
 
     showModalBottomSheet(
       context: context,
@@ -179,10 +284,12 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       builder: (_) => AttendanceSheet(
         date: date,
         data: data,
-        onSave: (newData) {
+        onSave: (newData) async {
           setState(() {
             attendance[dateKey(date)] = newData;
           });
+
+          await saveAttendanceData();
         },
       ),
     );
@@ -207,7 +314,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           rate,
           adv,
           ded,
-        ) {
+        ) async {
           setState(() {
             monthlySalary = salary;
             standardDays = days;
@@ -216,6 +323,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
             advance = adv;
             deduction = ded;
           });
+
+          await savePaymentSettings();
         },
       ),
     );
@@ -223,6 +332,14 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(
@@ -237,7 +354,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedTab,
         onDestinationSelected: (index) {
-          setState(() => selectedTab = index);
+          setState(() {
+            selectedTab = index;
+          });
         },
         destinations: const [
           NavigationDestination(
@@ -333,8 +452,16 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           const SizedBox(height: 14),
           Row(
             children: [
-              statCard('Hours', '$totalHours H', Icons.access_time),
-              statCard('OT', '$totalOt H', Icons.timer_outlined),
+              statCard(
+                'Hours',
+                '$totalHours H',
+                Icons.access_time,
+              ),
+              statCard(
+                'OT',
+                '$totalOt H',
+                Icons.timer_outlined,
+              ),
               statCard(
                 'Payment',
                 '₹${netPayment.toStringAsFixed(0)}',
@@ -351,7 +478,11 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
-  Widget statCard(String title, String value, IconData icon) {
+  Widget statCard(
+    String title,
+    String value,
+    IconData icon,
+  ) {
     return Expanded(
       child: Container(
         margin: const EdgeInsets.only(right: 7),
@@ -418,7 +549,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment:
+                MainAxisAlignment.spaceAround,
             children: const [
               Text('SUN'),
               Text('MON'),
@@ -432,7 +564,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           const SizedBox(height: 12),
           GridView.builder(
             shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+            physics:
+                const NeverScrollableScrollPhysics(),
             itemCount: startOffset + daysInMonth,
             gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
@@ -447,13 +580,15 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               }
 
               final day = index - startOffset + 1;
+
               final date = DateTime(
                 selectedMonth.year,
                 selectedMonth.month,
                 day,
               );
 
-              final data = attendance[dateKey(date)];
+              final data =
+                  attendance[dateKey(date)];
 
               return GestureDetector(
                 onTap: () => openAttendance(date),
@@ -463,7 +598,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                         ? const Color(0xFFF8FAFC)
                         : statusColor(data.status)
                             .withOpacity(.10),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                     border: Border.all(
                       color: data == null
                           ? const Color(0xFFD1DCE5)
@@ -488,15 +624,27 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                           size: 17,
                           color: Colors.black26,
                         )
-                      else
+                      else ...[
                         Text(
                           '${data.normalHours}H',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: statusColor(data.status),
+                            color:
+                                statusColor(data.status),
                           ),
                         ),
+                        if (data.otHours > 0)
+                          Text(
+                            'OT ${data.otHours}H',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  Color(0xFF1477B8),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -508,12 +656,30 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
             spacing: 12,
             runSpacing: 8,
             children: [
-              legend('Present', const Color(0xFF168447)),
-              legend('Half Day', const Color(0xFFD55A18)),
-              legend('Absent', const Color(0xFFC62828)),
-              legend('Leave', const Color(0xFFD9A400)),
-              legend('Holiday', const Color(0xFF7136C5)),
-              legend('OT', const Color(0xFF1477B8)),
+              legend(
+                'Present',
+                const Color(0xFF168447),
+              ),
+              legend(
+                'Half Day',
+                const Color(0xFFD55A18),
+              ),
+              legend(
+                'Absent',
+                const Color(0xFFC62828),
+              ),
+              legend(
+                'Leave',
+                const Color(0xFFD9A400),
+              ),
+              legend(
+                'Holiday',
+                const Color(0xFF7136C5),
+              ),
+              legend(
+                'OT',
+                const Color(0xFF1477B8),
+              ),
             ],
           ),
         ],
@@ -546,11 +712,14 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Text(
             'Monthly Summary',
-            style: Theme.of(context).textTheme.headlineSmall,
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall,
           ),
           const SizedBox(height: 14),
           Text('Present: $presentCount'),
@@ -568,7 +737,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
+          padding:
+              const EdgeInsets.fromLTRB(20, 22, 20, 12),
           child: Row(
             children: [
               const Expanded(
@@ -582,7 +752,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               ),
               IconButton(
                 onPressed: openSettings,
-                icon: const Icon(Icons.settings_outlined),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                ),
               ),
             ],
           ),
@@ -601,11 +773,20 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
             itemBuilder: (_, index) {
               final month = index + 1;
 
+              final stats =
+                  monthStatistics(
+                selectedMonth.year,
+                month,
+              );
+
               return GestureDetector(
                 onTap: () {
                   setState(() {
-                    selectedMonth =
-                        DateTime(selectedMonth.year, month, 1);
+                    selectedMonth = DateTime(
+                      selectedMonth.year,
+                      month,
+                      1,
+                    );
                     selectedTab = 0;
                   });
                 },
@@ -613,7 +794,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius:
+                        BorderRadius.circular(22),
                     border: Border.all(
                       color: const Color(0xFFD2DEE8),
                     ),
@@ -629,19 +811,21 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Text('${selectedMonth.year}'),
+                      Text(
+                        '${selectedMonth.year}',
+                      ),
                       const Spacer(),
-                      const Text(
-                        'P 0     A 0     H 0',
-                        style: TextStyle(
+                      Text(
+                        'P ${stats.present}   A ${stats.absent}',
+                        style: const TextStyle(
                           color: Colors.black54,
                         ),
                       ),
                       const SizedBox(height: 5),
-                      const Text(
-                        '⏱ OT 0H',
-                        style: TextStyle(
-                          color: Color(0xFFD55A18),
+                      Text(
+                        'H ${stats.halfDay}   OT ${stats.ot}H',
+                        style: const TextStyle(
+                          color: Color(0xFF1477B8),
                         ),
                       ),
                     ],
@@ -655,11 +839,60 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
+  _MonthStats monthStatistics(
+    int year,
+    int month,
+  ) {
+    int present = 0;
+    int absent = 0;
+    int halfDay = 0;
+    int ot = 0;
+
+    for (final entry in attendance.entries) {
+      final parts = entry.key.split('-');
+
+      if (parts.length != 3) continue;
+
+      final entryYear = int.tryParse(parts[0]);
+      final entryMonth = int.tryParse(parts[1]);
+
+      if (entryYear == year && entryMonth == month) {
+        final item = entry.value;
+
+        if (item.status ==
+            AttendanceStatus.present) {
+          present++;
+        }
+
+        if (item.status ==
+            AttendanceStatus.absent) {
+          absent++;
+        }
+
+        if (item.status ==
+            AttendanceStatus.halfDay) {
+          halfDay++;
+        }
+
+        ot += item.otHours;
+      }
+    }
+
+    return _MonthStats(
+      present: present,
+      absent: absent,
+      halfDay: halfDay,
+      ot: ot,
+    );
+  }
+
   Widget summaryScreen() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
+      padding:
+          const EdgeInsets.fromLTRB(20, 22, 20, 30),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -674,7 +907,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               ),
               IconButton(
                 onPressed: openSettings,
-                icon: const Icon(Icons.settings_outlined),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                ),
               ),
             ],
           ),
@@ -716,9 +951,15 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 const SizedBox(height: 18),
                 Row(
                   children: [
-                    summaryPill('Hours', '$totalHours H'),
+                    summaryPill(
+                      'Hours',
+                      '$totalHours H',
+                    ),
                     const SizedBox(width: 10),
-                    summaryPill('OT', '$totalOt H'),
+                    summaryPill(
+                      'OT',
+                      '$totalOt H',
+                    ),
                   ],
                 ),
               ],
@@ -728,11 +969,26 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           sectionCard(
             'Attendance',
             [
-              summaryRow('Present', '$presentCount'),
-              summaryRow('Absent', '$absentCount'),
-              summaryRow('Half Day', '$halfDayCount'),
-              summaryRow('Leave', '$leaveCount'),
-              summaryRow('Holiday', '$holidayCount'),
+              summaryRow(
+                'Present',
+                '$presentCount',
+              ),
+              summaryRow(
+                'Absent',
+                '$absentCount',
+              ),
+              summaryRow(
+                'Half Day',
+                '$halfDayCount',
+              ),
+              summaryRow(
+                'Leave',
+                '$leaveCount',
+              ),
+              summaryRow(
+                'Holiday',
+                '$holidayCount',
+              ),
             ],
           ),
           const SizedBox(height: 18),
@@ -794,7 +1050,10 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
-  Widget summaryPill(String title, String value) {
+  Widget summaryPill(
+    String title,
+    String value,
+  ) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -863,7 +1122,8 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     bool bold = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding:
+          const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         mainAxisAlignment:
             MainAxisAlignment.spaceBetween,
@@ -913,6 +1173,20 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   }
 }
 
+class _MonthStats {
+  final int present;
+  final int absent;
+  final int halfDay;
+  final int ot;
+
+  _MonthStats({
+    required this.present,
+    required this.absent,
+    required this.halfDay,
+    required this.ot,
+  });
+}
+
 class AttendanceSheet extends StatefulWidget {
   final DateTime date;
   final AttendanceData data;
@@ -940,11 +1214,15 @@ class _AttendanceSheetState
   @override
   void initState() {
     super.initState();
+
     status = widget.data.status;
     hours = widget.data.normalHours;
     otHours = widget.data.otHours;
+
     noteController =
-        TextEditingController(text: widget.data.note);
+        TextEditingController(
+      text: widget.data.note,
+    );
   }
 
   @override
@@ -972,7 +1250,8 @@ class _AttendanceSheetState
   Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        padding:
+            const EdgeInsets.fromLTRB(20, 12, 20, 20),
         decoration: const BoxDecoration(
           color: Color(0xFFF4F8FC),
           borderRadius: BorderRadius.vertical(
@@ -1021,29 +1300,36 @@ class _AttendanceSheetState
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: AttendanceStatus.values
-                    .map(
-                      (value) => ChoiceChip(
-                        label: Text(_status(value)),
-                        selected: status == value,
-                        selectedColor:
-                            colorFor(value).withOpacity(.18),
-                        onSelected: (_) {
-                          setState(() {
-                            status = value;
+                children:
+                    AttendanceStatus.values.map(
+                  (value) {
+                    return ChoiceChip(
+                      label: Text(
+                        _status(value),
+                      ),
+                      selected:
+                          status == value,
+                      selectedColor:
+                          colorFor(value)
+                              .withOpacity(.18),
+                      onSelected: (_) {
+                        setState(() {
+                          status = value;
 
-                            if (value ==
-                                AttendanceStatus.halfDay) {
-                              hours = 4;
-                            } else if (value ==
-                                AttendanceStatus.present) {
+                          if (value ==
+                              AttendanceStatus.halfDay) {
+                            hours = 4;
+                          } else if (value ==
+                              AttendanceStatus.present) {
+                            if (hours == 4) {
                               hours = 8;
                             }
-                          });
-                        },
-                      ),
-                    )
-                    .toList(),
+                          }
+                        });
+                      },
+                    );
+                  },
+                ).toList(),
               ),
               const SizedBox(height: 22),
               const Text(
@@ -1055,32 +1341,36 @@ class _AttendanceSheetState
               ),
               const SizedBox(height: 10),
               Row(
-                children: [4, 8, 10]
-                    .map(
-                      (value) => Expanded(
-                        child: Padding(
-                          padding:
-                              const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text('${value}H'),
-                            selected: hours == value,
-                            onSelected: (_) {
-                              setState(() {
-                                hours = value;
-                                if (value == 4) {
-                                  status =
-                                      AttendanceStatus.halfDay;
-                                } else {
-                                  status =
-                                      AttendanceStatus.present;
-                                }
-                              });
-                            },
-                          ),
+                children: [4, 8, 10].map(
+                  (value) {
+                    return Expanded(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.only(
+                          right: 8,
+                        ),
+                        child: ChoiceChip(
+                          label: Text('${value}H'),
+                          selected:
+                              hours == value,
+                          onSelected: (_) {
+                            setState(() {
+                              hours = value;
+
+                              if (value == 4) {
+                                status =
+                                    AttendanceStatus.halfDay;
+                              } else {
+                                status =
+                                    AttendanceStatus.present;
+                              }
+                            });
+                          },
                         ),
                       ),
-                    )
-                    .toList(),
+                    );
+                  },
+                ).toList(),
               ),
               const SizedBox(height: 22),
               const Text(
@@ -1092,25 +1382,28 @@ class _AttendanceSheetState
               ),
               const SizedBox(height: 10),
               Row(
-                children: [0, 2, 4]
-                    .map(
-                      (value) => Expanded(
-                        child: Padding(
-                          padding:
-                              const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text('${value}H'),
-                            selected: otHours == value,
-                            onSelected: (_) {
-                              setState(() {
-                                otHours = value;
-                              });
-                            },
-                          ),
+                children: [0, 2, 4].map(
+                  (value) {
+                    return Expanded(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.only(
+                          right: 8,
+                        ),
+                        child: ChoiceChip(
+                          label: Text('${value}H'),
+                          selected:
+                              otHours == value,
+                          onSelected: (_) {
+                            setState(() {
+                              otHours = value;
+                            });
+                          },
                         ),
                       ),
-                    )
-                    .toList(),
+                    );
+                  },
+                ).toList(),
               ),
               const SizedBox(height: 22),
               const Text(
@@ -1125,11 +1418,14 @@ class _AttendanceSheetState
                 controller: noteController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  hintText: 'Optional note...',
+                  hintText:
+                      'Optional note...',
                   filled: true,
                   fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                  border:
+                      OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(20),
                   ),
                 ),
               ),
@@ -1144,15 +1440,20 @@ class _AttendanceSheetState
                         status: status,
                         normalHours: hours,
                         otHours: otHours,
-                        note: noteController.text,
+                        note:
+                            noteController.text,
                       ),
                     );
+
                     Navigator.pop(context);
                   },
-                  icon: const Icon(Icons.save_outlined),
+                  icon: const Icon(
+                    Icons.save_outlined,
+                  ),
                   label: const Text(
                     'Save Attendance',
-                    style: TextStyle(fontSize: 17),
+                    style:
+                        TextStyle(fontSize: 17),
                   ),
                 ),
               ),
@@ -1194,6 +1495,7 @@ class _AttendanceSheetState
       'Nov',
       'Dec',
     ];
+
     return names[month];
   }
 }
@@ -1244,18 +1546,29 @@ class _PaymentSettingsSheetState
   void initState() {
     super.initState();
 
-    salary =
-        TextEditingController(text: widget.monthlySalary.toString());
-    days =
-        TextEditingController(text: widget.standardDays.toString());
-    hours =
-        TextEditingController(text: widget.normalHours.toString());
-    rate =
-        TextEditingController(text: widget.otRate.toString());
-    advance =
-        TextEditingController(text: widget.advance.toString());
-    deduction =
-        TextEditingController(text: widget.deduction.toString());
+    salary = TextEditingController(
+      text: widget.monthlySalary.toString(),
+    );
+
+    days = TextEditingController(
+      text: widget.standardDays.toString(),
+    );
+
+    hours = TextEditingController(
+      text: widget.normalHours.toString(),
+    );
+
+    rate = TextEditingController(
+      text: widget.otRate.toString(),
+    );
+
+    advance = TextEditingController(
+      text: widget.advance.toString(),
+    );
+
+    deduction = TextEditingController(
+      text: widget.deduction.toString(),
+    );
   }
 
   @override
@@ -1343,12 +1656,14 @@ class _PaymentSettingsSheetState
                       number(advance.text),
                       number(deduction.text),
                     );
+
                     Navigator.pop(context);
                   },
                   icon: const Icon(Icons.save),
                   label: const Text(
                     'Save Configuration',
-                    style: TextStyle(fontSize: 17),
+                    style:
+                        TextStyle(fontSize: 17),
                   ),
                 ),
               ),
@@ -1365,7 +1680,8 @@ class _PaymentSettingsSheetState
     IconData icon,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding:
+          const EdgeInsets.only(bottom: 14),
       child: TextField(
         controller: controller,
         keyboardType:
@@ -1377,8 +1693,10 @@ class _PaymentSettingsSheetState
           prefixIcon: Icon(icon),
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
+          border:
+              OutlineInputBorder(
+            borderRadius:
+                BorderRadius.circular(20),
           ),
         ),
       ),

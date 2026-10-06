@@ -2188,7 +2188,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
 
     final dailyWage =
         standardWorkingDays == 0
-            ? 0
+            ? 0.0
             : monthlySalary / standardWorkingDays;
 
     final basic =

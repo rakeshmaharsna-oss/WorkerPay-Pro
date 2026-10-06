@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+gimport 'package:flutter/material.dart';
 
 class WorkerPayApp extends StatelessWidget {
   const WorkerPayApp({super.key});
@@ -1157,7 +1157,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           ),
           _paymentRow(
             'Daily Wage',
-            '₹${_money(dailyWage)}',
+            '₹${_money(dailyWage.toDouble())}',
           ),
           _paymentRow(
             'OT Rate',

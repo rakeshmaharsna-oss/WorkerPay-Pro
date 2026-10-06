@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'storage_service.dart';
 
 class WorkerPayApp extends StatelessWidget {
   const WorkerPayApp({super.key});
@@ -11,10 +10,10 @@ class WorkerPayApp extends StatelessWidget {
       title: 'Worker Pay',
       theme: ThemeData(
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF4F7FB),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF08658A),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF4F8FC),
       ),
       home: const WorkerPayHome(),
     );
@@ -41,31 +40,6 @@ class AttendanceData {
     this.otHours = 0,
     this.note = '',
   });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'status': status.name,
-      'normalHours': normalHours,
-      'otHours': otHours,
-      'note': note,
-    };
-  }
-
-  factory AttendanceData.fromJson(Map<String, dynamic> json) {
-    final statusName = json['status'] as String?;
-
-    final status = AttendanceStatus.values.firstWhere(
-      (value) => value.name == statusName,
-      orElse: () => AttendanceStatus.present,
-    );
-
-    return AttendanceData(
-      status: status,
-      normalHours: (json['normalHours'] as num?)?.toInt() ?? 8,
-      otHours: (json['otHours'] as num?)?.toInt() ?? 0,
-      note: json['note']?.toString() ?? '',
-    );
-  }
 }
 
 class WorkerPayHome extends StatefulWidget {
@@ -88,120 +62,101 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   double advance = 0;
   double deduction = 0;
 
-  bool loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    loadSavedData();
-  }
-
   String dateKey(DateTime date) {
     return '${date.year}-${date.month}-${date.day}';
   }
 
-  Future<void> loadSavedData() async {
-    final savedAttendance =
-        await StorageService.instance.loadAttendance();
-
-    final savedSettings =
-        await StorageService.instance.loadSettings();
-
-    if (!mounted) return;
-
-    setState(() {
-      attendance.clear();
-
-      savedAttendance.forEach((key, value) {
-        if (value is Map) {
-          attendance[key] = AttendanceData.fromJson(
-            Map<String, dynamic>.from(value),
-          );
-        }
-      });
-
-      monthlySalary =
-          (savedSettings['monthlySalary'] as num?)?.toDouble() ??
-              monthlySalary;
-
-      standardDays =
-          (savedSettings['standardDays'] as num?)?.toInt() ??
-              standardDays;
-
-      normalHours =
-          (savedSettings['normalHours'] as num?)?.toInt() ??
-              normalHours;
-
-      otRate =
-          (savedSettings['otRate'] as num?)?.toDouble() ??
-              otRate;
-
-      advance =
-          (savedSettings['advance'] as num?)?.toDouble() ??
-              advance;
-
-      deduction =
-          (savedSettings['deduction'] as num?)?.toDouble() ??
-              deduction;
-
-      loading = false;
-    });
+  AttendanceData dataFor(DateTime date) {
+    return attendance.putIfAbsent(
+      dateKey(date),
+      () => AttendanceData(),
+    );
   }
 
-  Future<void> saveAttendanceData() async {
-    final data = <String, dynamic>{};
+  List<MapEntry<String, AttendanceData>> get currentMonthEntries {
+    return attendance.entries.where((entry) {
+      final parts = entry.key.split('-');
 
-    attendance.forEach((key, value) {
-      data[key] = value.toJson();
-    });
+      if (parts.length != 3) {
+        return false;
+      }
 
-    await StorageService.instance.saveAttendance(data);
+      final year = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+
+      return year == selectedMonth.year &&
+          month == selectedMonth.month;
+    }).toList();
   }
 
-  Future<void> savePaymentSettings() async {
-    await StorageService.instance.saveSettings({
-      'monthlySalary': monthlySalary,
-      'standardDays': standardDays,
-      'normalHours': normalHours,
-      'otRate': otRate,
-      'advance': advance,
-      'deduction': deduction,
-    });
+  int get presentCount {
+    return currentMonthEntries
+        .where(
+          (e) => e.value.status == AttendanceStatus.present,
+        )
+        .length;
   }
 
-  int get presentCount => attendance.values
-      .where((e) => e.status == AttendanceStatus.present)
-      .length;
+  int get halfDayCount {
+    return currentMonthEntries
+        .where(
+          (e) => e.value.status == AttendanceStatus.halfDay,
+        )
+        .length;
+  }
 
-  int get halfDayCount => attendance.values
-      .where((e) => e.status == AttendanceStatus.halfDay)
-      .length;
+  int get absentCount {
+    return currentMonthEntries
+        .where(
+          (e) => e.value.status == AttendanceStatus.absent,
+        )
+        .length;
+  }
 
-  int get absentCount => attendance.values
-      .where((e) => e.status == AttendanceStatus.absent)
-      .length;
+  int get leaveCount {
+    return currentMonthEntries
+        .where(
+          (e) => e.value.status == AttendanceStatus.leave,
+        )
+        .length;
+  }
 
-  int get leaveCount => attendance.values
-      .where((e) => e.status == AttendanceStatus.leave)
-      .length;
+  int get holidayCount {
+    return currentMonthEntries
+        .where(
+          (e) => e.value.status == AttendanceStatus.holiday,
+        )
+        .length;
+  }
 
-  int get holidayCount => attendance.values
-      .where((e) => e.status == AttendanceStatus.holiday)
-      .length;
+  int get totalHours {
+    return currentMonthEntries.fold(
+      0,
+      (sum, entry) => sum + entry.value.normalHours,
+    );
+  }
 
-  int get totalHours =>
-      attendance.values.fold(0, (sum, e) => sum + e.normalHours);
+  int get totalOt {
+    return currentMonthEntries.fold(
+      0,
+      (sum, entry) => sum + entry.value.otHours,
+    );
+  }
 
-  int get totalOt =>
-      attendance.values.fold(0, (sum, e) => sum + e.otHours);
+  double get dailyWage {
+    if (standardDays <= 0) {
+      return 0;
+    }
 
-  double get dailyWage =>
-      standardDays <= 0 ? 0 : monthlySalary / standardDays;
+    return monthlySalary / standardDays;
+  }
 
   double get basicPayment {
     double total = 0;
 
-    for (final item in attendance.values) {
+    for (final entry in currentMonthEntries) {
+      final item = entry.value;
+
       if (item.status == AttendanceStatus.present) {
         total += dailyWage;
       } else if (item.status == AttendanceStatus.halfDay) {
@@ -212,21 +167,28 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     return total;
   }
 
-  double get otPayment => totalOt * otRate;
+  double get otPayment {
+    return totalOt * otRate;
+  }
 
-  double get netPayment =>
-      basicPayment + otPayment - advance - deduction;
+  double get netPayment {
+    return basicPayment + otPayment - advance - deduction;
+  }
 
   Color statusColor(AttendanceStatus status) {
     switch (status) {
       case AttendanceStatus.present:
         return const Color(0xFF168447);
+
       case AttendanceStatus.halfDay:
         return const Color(0xFFD55A18);
+
       case AttendanceStatus.absent:
         return const Color(0xFFC62828);
+
       case AttendanceStatus.leave:
         return const Color(0xFFD9A400);
+
       case AttendanceStatus.holiday:
         return const Color(0xFF7136C5);
     }
@@ -236,12 +198,16 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     switch (status) {
       case AttendanceStatus.present:
         return 'Present';
+
       case AttendanceStatus.halfDay:
         return 'Half Day';
+
       case AttendanceStatus.absent:
         return 'Absent';
+
       case AttendanceStatus.leave:
         return 'Leave';
+
       case AttendanceStatus.holiday:
         return 'Holiday';
     }
@@ -252,6 +218,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       selectedMonth = DateTime(
         selectedMonth.year,
         selectedMonth.month - 1,
+        1,
       );
     });
   }
@@ -261,37 +228,36 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       selectedMonth = DateTime(
         selectedMonth.year,
         selectedMonth.month + 1,
+        1,
       );
     });
   }
 
   void openAttendance(DateTime date) {
-    final oldData = attendance[dateKey(date)];
+    final oldData = dataFor(date);
 
-    final data = oldData == null
-        ? AttendanceData()
-        : AttendanceData(
-            status: oldData.status,
-            normalHours: oldData.normalHours,
-            otHours: oldData.otHours,
-            note: oldData.note,
-          );
+    final copiedData = AttendanceData(
+      status: oldData.status,
+      normalHours: oldData.normalHours,
+      otHours: oldData.otHours,
+      note: oldData.note,
+    );
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AttendanceSheet(
-        date: date,
-        data: data,
-        onSave: (newData) async {
-          setState(() {
-            attendance[dateKey(date)] = newData;
-          });
-
-          await saveAttendanceData();
-        },
-      ),
+      builder: (_) {
+        return AttendanceSheet(
+          date: date,
+          data: copiedData,
+          onSave: (newData) {
+            setState(() {
+              attendance[dateKey(date)] = newData;
+            });
+          },
+        );
+      },
     );
   }
 
@@ -300,46 +266,38 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PaymentSettingsSheet(
-        monthlySalary: monthlySalary,
-        standardDays: standardDays,
-        normalHours: normalHours,
-        otRate: otRate,
-        advance: advance,
-        deduction: deduction,
-        onSave: (
-          salary,
-          days,
-          hours,
-          rate,
-          adv,
-          ded,
-        ) async {
-          setState(() {
-            monthlySalary = salary;
-            standardDays = days;
-            normalHours = hours;
-            otRate = rate;
-            advance = adv;
-            deduction = ded;
-          });
-
-          await savePaymentSettings();
-        },
-      ),
+      builder: (_) {
+        return PaymentSettingsSheet(
+          monthlySalary: monthlySalary,
+          standardDays: standardDays,
+          normalHours: normalHours,
+          otRate: otRate,
+          advance: advance,
+          deduction: deduction,
+          onSave: (
+            salary,
+            days,
+            hours,
+            rate,
+            adv,
+            ded,
+          ) {
+            setState(() {
+              monthlySalary = salary;
+              standardDays = days;
+              normalHours = hours;
+              otRate = rate;
+              advance = adv;
+              deduction = ded;
+            });
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(
@@ -352,6 +310,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
+        height: 76,
         selectedIndex: selectedTab,
         onDestinationSelected: (index) {
           setState(() {
@@ -379,11 +338,20 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
+  // ------------------------------------------------------------
+  // MONTH SCREEN
+  // ------------------------------------------------------------
+
   Widget monthScreen() {
     final monthName = _monthName(selectedMonth.month);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+      padding: const EdgeInsets.fromLTRB(
+        18,
+        18,
+        18,
+        24,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -393,49 +361,63 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 child: Text(
                   'Worker Pay',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 31,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),
               IconButton(
                 onPressed: openSettings,
-                icon: const Icon(Icons.settings_outlined),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  size: 27,
+                ),
               ),
             ],
           ),
+
           const SizedBox(height: 14),
+
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 16,
+              horizontal: 10,
+              vertical: 14,
             ),
             decoration: BoxDecoration(
               color: const Color(0xFF08658A),
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(26),
             ),
             child: Row(
               children: [
                 IconButton(
                   color: Colors.white,
                   onPressed: previousMonth,
-                  icon: const Icon(Icons.chevron_left),
+                  icon: const Icon(
+                    Icons.chevron_left,
+                    size: 30,
+                  ),
                 ),
                 Expanded(
                   child: Column(
                     children: [
                       Text(
                         '$monthName ${selectedMonth.year}',
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 25,
+                          fontSize: 24,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(height: 3),
                       const Text(
                         'Tap a date to add attendance',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white70,
+                          fontSize: 13,
                         ),
                       ),
                     ],
@@ -444,12 +426,17 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 IconButton(
                   color: Colors.white,
                   onPressed: nextMonth,
-                  icon: const Icon(Icons.chevron_right),
+                  icon: const Icon(
+                    Icons.chevron_right,
+                    size: 30,
+                  ),
                 ),
               ],
             ),
           ),
+
           const SizedBox(height: 14),
+
           Row(
             children: [
               statCard(
@@ -457,11 +444,13 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 '$totalHours H',
                 Icons.access_time,
               ),
+              const SizedBox(width: 8),
               statCard(
                 'OT',
                 '$totalOt H',
                 Icons.timer_outlined,
               ),
+              const SizedBox(width: 8),
               statCard(
                 'Payment',
                 '₹${netPayment.toStringAsFixed(0)}',
@@ -469,10 +458,10 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               ),
             ],
           ),
+
           const SizedBox(height: 18),
+
           calendarCard(),
-          const SizedBox(height: 18),
-          summaryPreview(),
         ],
       ),
     );
@@ -485,35 +474,44 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   ) {
     return Expanded(
       child: Container(
-        margin: const EdgeInsets.only(right: 7),
-        padding: const EdgeInsets.all(12),
+        constraints: const BoxConstraints(
+          minHeight: 105,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 12,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: const Color(0xFFD2DEE8),
+            color: const Color(0xFFD3DEE7),
           ),
         ),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
               color: const Color(0xFF08658A),
+              size: 23,
             ),
             const SizedBox(height: 5),
             Text(
               title,
               style: const TextStyle(
+                fontSize: 13,
                 color: Colors.black54,
               ),
             ),
             const SizedBox(height: 3),
-            Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
+            FittedBox(
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -521,6 +519,10 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       ),
     );
   }
+
+  // ------------------------------------------------------------
+  // CALENDAR
+  // ------------------------------------------------------------
 
   Widget calendarCard() {
     final firstDay = DateTime(
@@ -538,41 +540,61 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     final startOffset = firstDay.weekday % 7;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        12,
+        18,
+        12,
+        18,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: const Color(0xFFD2DEE8),
+          color: const Color(0xFFD3DEE7),
         ),
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment:
-                MainAxisAlignment.spaceAround,
-            children: const [
-              Text('SUN'),
-              Text('MON'),
-              Text('TUE'),
-              Text('WED'),
-              Text('THU'),
-              Text('FRI'),
-              Text('SAT'),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Expanded(
+                child: Center(child: Text('SUN')),
+              ),
+              Expanded(
+                child: Center(child: Text('MON')),
+              ),
+              Expanded(
+                child: Center(child: Text('TUE')),
+              ),
+              Expanded(
+                child: Center(child: Text('WED')),
+              ),
+              Expanded(
+                child: Center(child: Text('THU')),
+              ),
+              Expanded(
+                child: Center(child: Text('FRI')),
+              ),
+              Expanded(
+                child: Center(child: Text('SAT')),
+              ),
             ],
           ),
+
           const SizedBox(height: 12),
+
           GridView.builder(
             shrinkWrap: true,
-            physics:
-                const NeverScrollableScrollPhysics(),
+            physics: const NeverScrollableScrollPhysics(),
             itemCount: startOffset + daysInMonth,
             gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisSpacing: 7,
-              crossAxisSpacing: 7,
-              childAspectRatio: .82,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 6,
+              childAspectRatio: 0.78,
             ),
             itemBuilder: (_, index) {
               if (index < startOffset) {
@@ -587,74 +609,24 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 day,
               );
 
-              final data =
-                  attendance[dateKey(date)];
+              final data = attendance[dateKey(date)];
 
               return GestureDetector(
                 onTap: () => openAttendance(date),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: data == null
-                        ? const Color(0xFFF8FAFC)
-                        : statusColor(data.status)
-                            .withOpacity(.10),
-                    borderRadius:
-                        BorderRadius.circular(14),
-                    border: Border.all(
-                      color: data == null
-                          ? const Color(0xFFD1DCE5)
-                          : statusColor(data.status),
-                      width: data == null ? 1 : 1.5,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '$day',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      if (data == null)
-                        const Icon(
-                          Icons.add,
-                          size: 17,
-                          color: Colors.black26,
-                        )
-                      else ...[
-                        Text(
-                          '${data.normalHours}H',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color:
-                                statusColor(data.status),
-                          ),
-                        ),
-                        if (data.otHours > 0)
-                          Text(
-                            'OT ${data.otHours}H',
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  Color(0xFF1477B8),
-                            ),
-                          ),
-                      ],
-                    ],
-                  ),
+                child: _calendarDay(
+                  day,
+                  data,
                 ),
               );
             },
           ),
-          const SizedBox(height: 15),
+
+          const SizedBox(height: 17),
+
           Wrap(
-            spacing: 12,
-            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            spacing: 15,
+            runSpacing: 10,
             children: [
               legend(
                 'Present',
@@ -687,66 +659,115 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
-  Widget legend(String text, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 5,
-          backgroundColor: color,
-        ),
-        const SizedBox(width: 5),
-        Text(text),
-      ],
-    );
-  }
+  Widget _calendarDay(
+    int day,
+    AttendanceData? data,
+  ) {
+    final color = data == null
+        ? const Color(0xFFD1DCE5)
+        : statusColor(data.status);
 
-  Widget summaryPreview() {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
+        color: data == null
+            ? const Color(0xFFF8FAFC)
+            : color.withOpacity(.10),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFD2DEE8),
+          color: color,
+          width: data == null ? 1 : 1.5,
         ),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            'Monthly Summary',
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall,
+            '$day',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 14),
-          Text('Present: $presentCount'),
-          Text('Half Day: $halfDayCount'),
-          Text('Absent: $absentCount'),
-          Text('Leave: $leaveCount'),
-          Text('Holiday: $holidayCount'),
-          Text('OT Hours: $totalOt H'),
+          const SizedBox(height: 4),
+          if (data == null)
+            const Icon(
+              Icons.add,
+              size: 18,
+              color: Colors.black38,
+            )
+          else ...[
+            Text(
+              '${data.normalHours}H',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            if (data.otHours > 0)
+              Text(
+                'OT ${data.otHours}H',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1477B8),
+                ),
+              ),
+          ],
         ],
       ),
     );
   }
 
+  Widget legend(
+    String text,
+    Color color,
+  ) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ------------------------------------------------------------
+  // YEAR SCREEN
+  // ------------------------------------------------------------
+
   Widget yearScreen() {
     return Column(
       children: [
         Padding(
-          padding:
-              const EdgeInsets.fromLTRB(20, 22, 20, 12),
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            20,
+            16,
+            8,
+          ),
           child: Row(
             children: [
               const Expanded(
                 child: Text(
                   'Year Calendar',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 31,
                     fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),
@@ -754,27 +775,33 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 onPressed: openSettings,
                 icon: const Icon(
                   Icons.settings_outlined,
+                  size: 28,
                 ),
               ),
             ],
           ),
         ),
+
         Expanded(
           child: GridView.builder(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.fromLTRB(
+              18,
+              10,
+              18,
+              20,
+            ),
             itemCount: 12,
             gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               mainAxisSpacing: 14,
               crossAxisSpacing: 14,
-              childAspectRatio: 1.35,
+              childAspectRatio: 1.05,
             ),
             itemBuilder: (_, index) {
               final month = index + 1;
 
-              final stats =
-                  monthStatistics(
+              final stats = monthStats(
                 selectedMonth.year,
                 month,
               );
@@ -794,10 +821,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: const Color(0xFFD2DEE8),
+                      color: const Color(0xFFD3DEE7),
                     ),
                   ),
                   child: Column(
@@ -811,22 +837,65 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+
+                      const SizedBox(height: 3),
+
                       Text(
                         '${selectedMonth.year}',
-                      ),
-                      const Spacer(),
-                      Text(
-                        'P ${stats.present}   A ${stats.absent}',
                         style: const TextStyle(
+                          fontSize: 15,
                           color: Colors.black54,
                         ),
                       ),
+
+                      const Spacer(),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'P ${stats['present']}',
+                              style: const TextStyle(
+                                color: Color(0xFF168447),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              'A ${stats['absent']}',
+                              style: const TextStyle(
+                                color: Color(0xFFC62828),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
                       const SizedBox(height: 5),
-                      Text(
-                        'H ${stats.halfDay}   OT ${stats.ot}H',
-                        style: const TextStyle(
-                          color: Color(0xFF1477B8),
-                        ),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'H ${stats['halfDay']}',
+                              style: const TextStyle(
+                                color: Color(0xFFD55A18),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              'OT ${stats['ot']}H',
+                              style: const TextStyle(
+                                color: Color(0xFF1477B8),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -839,7 +908,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     );
   }
 
-  _MonthStats monthStatistics(
+  Map<String, int> monthStats(
     int year,
     int month,
   ) {
@@ -851,48 +920,56 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     for (final entry in attendance.entries) {
       final parts = entry.key.split('-');
 
-      if (parts.length != 3) continue;
+      if (parts.length != 3) {
+        continue;
+      }
 
       final entryYear = int.tryParse(parts[0]);
       final entryMonth = int.tryParse(parts[1]);
 
-      if (entryYear == year && entryMonth == month) {
-        final item = entry.value;
-
-        if (item.status ==
-            AttendanceStatus.present) {
-          present++;
-        }
-
-        if (item.status ==
-            AttendanceStatus.absent) {
-          absent++;
-        }
-
-        if (item.status ==
-            AttendanceStatus.halfDay) {
-          halfDay++;
-        }
-
-        ot += item.otHours;
+      if (entryYear != year || entryMonth != month) {
+        continue;
       }
+
+      final data = entry.value;
+
+      if (data.status == AttendanceStatus.present) {
+        present++;
+      }
+
+      if (data.status == AttendanceStatus.absent) {
+        absent++;
+      }
+
+      if (data.status == AttendanceStatus.halfDay) {
+        halfDay++;
+      }
+
+      ot += data.otHours;
     }
 
-    return _MonthStats(
-      present: present,
-      absent: absent,
-      halfDay: halfDay,
-      ot: ot,
-    );
+    return {
+      'present': present,
+      'absent': absent,
+      'halfDay': halfDay,
+      'ot': ot,
+    };
   }
+
+  // ------------------------------------------------------------
+  // SUMMARY SCREEN
+  // ------------------------------------------------------------
 
   Widget summaryScreen() {
     return SingleChildScrollView(
-      padding:
-          const EdgeInsets.fromLTRB(20, 22, 20, 30),
+      padding: const EdgeInsets.fromLTRB(
+        18,
+        20,
+        18,
+        28,
+      ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -900,8 +977,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 child: Text(
                   'Monthly Summary',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 31,
                     fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),
@@ -909,63 +987,26 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 onPressed: openSettings,
                 icon: const Icon(
                   Icons.settings_outlined,
+                  size: 27,
                 ),
               ),
             ],
           ),
+
           Text(
             '${_monthName(selectedMonth.month)} ${selectedMonth.year}',
             style: const TextStyle(
               color: Colors.black54,
-              fontSize: 17,
+              fontSize: 16,
             ),
           ),
+
           const SizedBox(height: 18),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(25),
-            decoration: BoxDecoration(
-              color: const Color(0xFF08658A),
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Estimated Net Payment',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 17,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '₹${netPayment.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 38,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    summaryPill(
-                      'Hours',
-                      '$totalHours H',
-                    ),
-                    const SizedBox(width: 10),
-                    summaryPill(
-                      'OT',
-                      '$totalOt H',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+
+          estimatedPaymentCard(),
+
           const SizedBox(height: 18),
+
           sectionCard(
             'Attendance',
             [
@@ -991,7 +1032,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               ),
             ],
           ),
+
           const SizedBox(height: 18),
+
           sectionCard(
             'Working Time',
             [
@@ -1005,7 +1048,9 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               ),
             ],
           ),
+
           const SizedBox(height: 18),
+
           sectionCard(
             'Payment',
             [
@@ -1037,11 +1082,75 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
                 'Deduction',
                 '- ₹${deduction.toStringAsFixed(0)}',
               ),
-              const Divider(height: 25),
+              const Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: 8,
+                ),
+                child: Divider(),
+              ),
               summaryRow(
                 'Net Payment',
                 '₹${netPayment.toStringAsFixed(0)}',
                 bold: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget estimatedPaymentCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        24,
+        25,
+        24,
+        22,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF08658A),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Estimated Net Payment',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 17,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '₹${netPayment.toStringAsFixed(0)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 42,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          Row(
+            children: [
+              summaryPill(
+                'Hours',
+                '$totalHours H',
+              ),
+              const SizedBox(width: 10),
+              summaryPill(
+                'OT',
+                '$totalOt H',
               ),
             ],
           ),
@@ -1056,9 +1165,12 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   ) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.13),
+          color: Colors.white.withOpacity(.14),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
@@ -1069,6 +1181,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               title,
               style: const TextStyle(
                 color: Colors.white70,
+                fontSize: 15,
               ),
             ),
             Text(
@@ -1076,6 +1189,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
           ],
@@ -1090,12 +1204,17 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
   ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(
+        22,
+        22,
+        22,
+        18,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: const Color(0xFFD2DEE8),
+          color: const Color(0xFFD3DEE7),
         ),
       ),
       child: Column(
@@ -1105,11 +1224,13 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 23,
+              fontSize: 25,
               fontWeight: FontWeight.w600,
             ),
           ),
+
           const SizedBox(height: 12),
+
           ...children,
         ],
       ),
@@ -1122,35 +1243,46 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
     bool bold = false,
   }) {
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(
+        vertical: 8,
+      ),
       child: Row(
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
+        crossAxisAlignment:
+            CrossAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight:
-                  bold ? FontWeight.bold : FontWeight.normal,
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: bold
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
             ),
           ),
+          const SizedBox(width: 12),
           Text(
             value,
+            textAlign: TextAlign.right,
             style: TextStyle(
               fontSize: 17,
-              fontWeight:
-                  bold ? FontWeight.bold : FontWeight.w600,
+              fontWeight: bold
+                  ? FontWeight.bold
+                  : FontWeight.w600,
               color: bold
                   ? const Color(0xFF168447)
-                  : null,
+                  : Colors.black87,
             ),
           ),
         ],
       ),
     );
   }
+
+  // ------------------------------------------------------------
+  // ATTENDANCE ENTRY
+  // ------------------------------------------------------------
 
   String _monthName(int month) {
     const months = [
@@ -1171,20 +1303,6 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
 
     return months[month];
   }
-}
-
-class _MonthStats {
-  final int present;
-  final int absent;
-  final int halfDay;
-  final int ot;
-
-  _MonthStats({
-    required this.present,
-    required this.absent,
-    required this.halfDay,
-    required this.ot,
-  });
 }
 
 class AttendanceSheet extends StatefulWidget {
@@ -1209,6 +1327,7 @@ class _AttendanceSheetState
   late AttendanceStatus status;
   late int hours;
   late int otHours;
+
   late TextEditingController noteController;
 
   @override
@@ -1219,8 +1338,7 @@ class _AttendanceSheetState
     hours = widget.data.normalHours;
     otHours = widget.data.otHours;
 
-    noteController =
-        TextEditingController(
+    noteController = TextEditingController(
       text: widget.data.note,
     );
   }
@@ -1235,12 +1353,16 @@ class _AttendanceSheetState
     switch (value) {
       case AttendanceStatus.present:
         return const Color(0xFF168447);
+
       case AttendanceStatus.halfDay:
         return const Color(0xFFD55A18);
+
       case AttendanceStatus.absent:
         return const Color(0xFFC62828);
+
       case AttendanceStatus.leave:
         return const Color(0xFFD9A400);
+
       case AttendanceStatus.holiday:
         return const Color(0xFF7136C5);
     }
@@ -1248,12 +1370,23 @@ class _AttendanceSheetState
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset =
+        MediaQuery.of(context).viewInsets.bottom;
+
     return SafeArea(
       child: Container(
-        padding:
-            const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        constraints: BoxConstraints(
+          maxHeight:
+              MediaQuery.of(context).size.height * .92,
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          20 + bottomInset,
+        ),
         decoration: const BoxDecoration(
-          color: Color(0xFFF4F8FC),
+          color: Color(0xFFF4F7FB),
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(32),
           ),
@@ -1269,18 +1402,23 @@ class _AttendanceSheetState
                     child: Text(
                       'Attendance Entry',
                       style: TextStyle(
-                        fontSize: 27,
+                        fontSize: 28,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                   IconButton(
-                    onPressed: () =>
-                        Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(
+                      Icons.close,
+                      size: 30,
+                    ),
                   ),
                 ],
               ),
+
               Text(
                 '${widget.date.day} ${_month(widget.date.month)} ${widget.date.year}',
                 style: const TextStyle(
@@ -1288,151 +1426,170 @@ class _AttendanceSheetState
                   fontSize: 16,
                 ),
               ),
+
               const SizedBox(height: 22),
+
               const Text(
                 'Status',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 19,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+
               const SizedBox(height: 10),
+
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children:
-                    AttendanceStatus.values.map(
-                  (value) {
-                    return ChoiceChip(
-                      label: Text(
-                        _status(value),
-                      ),
-                      selected:
-                          status == value,
-                      selectedColor:
-                          colorFor(value)
-                              .withOpacity(.18),
-                      onSelected: (_) {
-                        setState(() {
-                          status = value;
+                children: AttendanceStatus.values
+                    .map(
+                      (value) {
+                        final selected =
+                            status == value;
 
-                          if (value ==
-                              AttendanceStatus.halfDay) {
-                            hours = 4;
-                          } else if (value ==
-                              AttendanceStatus.present) {
-                            if (hours == 4) {
-                              hours = 8;
-                            }
-                          }
-                        });
-                      },
-                    );
-                  },
-                ).toList(),
-              ),
-              const SizedBox(height: 22),
-              const Text(
-                'Normal Working Hours',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [4, 8, 10].map(
-                  (value) {
-                    return Expanded(
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          right: 8,
-                        ),
-                        child: ChoiceChip(
-                          label: Text('${value}H'),
-                          selected:
-                              hours == value,
+                        return ChoiceChip(
+                          label: Text(
+                            _status(value),
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: selected
+                                  ? colorFor(value)
+                                  : Colors.black87,
+                            ),
+                          ),
+                          selected: selected,
+                          selectedColor:
+                              colorFor(value)
+                                  .withOpacity(.16),
+                          backgroundColor:
+                              Colors.white,
+                          side: BorderSide(
+                            color: selected
+                                ? colorFor(value)
+                                : const Color(
+                                    0xFFC8D1D9,
+                                  ),
+                          ),
                           onSelected: (_) {
                             setState(() {
-                              hours = value;
+                              status = value;
 
-                              if (value == 4) {
-                                status =
-                                    AttendanceStatus.halfDay;
-                              } else {
-                                status =
-                                    AttendanceStatus.present;
+                              if (value ==
+                                  AttendanceStatus.halfDay) {
+                                hours = 4;
+                              } else if (value ==
+                                  AttendanceStatus.present) {
+                                hours = 8;
                               }
                             });
                           },
-                        ),
-                      ),
-                    );
-                  },
-                ).toList(),
+                        );
+                      },
+                    )
+                    .toList(),
               ),
+
               const SizedBox(height: 22),
+
+              const Text(
+                'Normal Working Hours',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              _optionRow(
+                values: const [4, 8, 10],
+                selected: hours,
+                suffix: 'H',
+                onSelected: (value) {
+                  setState(() {
+                    hours = value;
+
+                    if (value == 4) {
+                      status =
+                          AttendanceStatus.halfDay;
+                    } else {
+                      status =
+                          AttendanceStatus.present;
+                    }
+                  });
+                },
+              ),
+
+              const SizedBox(height: 22),
+
               const Text(
                 'Overtime (OT) Hours',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 19,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+
               const SizedBox(height: 10),
-              Row(
-                children: [0, 2, 4].map(
-                  (value) {
-                    return Expanded(
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          right: 8,
-                        ),
-                        child: ChoiceChip(
-                          label: Text('${value}H'),
-                          selected:
-                              otHours == value,
-                          onSelected: (_) {
-                            setState(() {
-                              otHours = value;
-                            });
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ).toList(),
+
+              _optionRow(
+                values: const [0, 2, 4],
+                selected: otHours,
+                suffix: 'H',
+                selectedColor:
+                    const Color(0xFF1477B8),
+                onSelected: (value) {
+                  setState(() {
+                    otHours = value;
+                  });
+                },
               ),
+
               const SizedBox(height: 22),
+
               const Text(
                 'Note',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 19,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+
               const SizedBox(height: 8),
+
               TextField(
                 controller: noteController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  hintText:
-                      'Optional note...',
+                  hintText: 'Optional note...',
                   filled: true,
                   fillColor: Colors.white,
-                  border:
+                  contentPadding:
+                      const EdgeInsets.all(18),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(20),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFC8D1D9),
+                    ),
+                  ),
+                  enabledBorder:
                       OutlineInputBorder(
                     borderRadius:
                         BorderRadius.circular(20),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFC8D1D9),
+                    ),
                   ),
                 ),
               ),
+
               const SizedBox(height: 18),
+
               SizedBox(
                 width: double.infinity,
-                height: 55,
+                height: 58,
                 child: FilledButton.icon(
                   onPressed: () {
                     widget.onSave(
@@ -1440,8 +1597,7 @@ class _AttendanceSheetState
                         status: status,
                         normalHours: hours,
                         otHours: otHours,
-                        note:
-                            noteController.text,
+                        note: noteController.text,
                       ),
                     );
 
@@ -1452,8 +1608,10 @@ class _AttendanceSheetState
                   ),
                   label: const Text(
                     'Save Attendance',
-                    style:
-                        TextStyle(fontSize: 17),
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -1464,16 +1622,96 @@ class _AttendanceSheetState
     );
   }
 
+  Widget _optionRow({
+    required List<int> values,
+    required int selected,
+    required String suffix,
+    required Function(int) onSelected,
+    Color selectedColor =
+        const Color(0xFF08658A),
+  }) {
+    return Row(
+      children: values.map((value) {
+        final isSelected = selected == value;
+
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: value == values.last ? 0 : 8,
+            ),
+            child: InkWell(
+              borderRadius:
+                  BorderRadius.circular(16),
+              onTap: () {
+                onSelected(value);
+              },
+              child: Container(
+                height: 54,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? selectedColor
+                          .withOpacity(.13)
+                      : Colors.white,
+                  borderRadius:
+                      BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? selectedColor
+                        : const Color(
+                            0xFFC8D1D9,
+                          ),
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment:
+                      MainAxisAlignment.center,
+                  children: [
+                    if (isSelected)
+                      Icon(
+                        Icons.check,
+                        size: 19,
+                        color: selectedColor,
+                      ),
+                    if (isSelected)
+                      const SizedBox(width: 6),
+                    Text(
+                      '$value$suffix',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: isSelected
+                            ? selectedColor
+                            : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   String _status(AttendanceStatus value) {
     switch (value) {
       case AttendanceStatus.present:
         return 'Present';
+
       case AttendanceStatus.halfDay:
         return 'Half Day';
+
       case AttendanceStatus.absent:
         return 'Absent';
+
       case AttendanceStatus.leave:
         return 'Leave';
+
       case AttendanceStatus.holiday:
         return 'Holiday';
     }
@@ -1499,6 +1737,10 @@ class _AttendanceSheetState
     return names[month];
   }
 }
+
+// ------------------------------------------------------------
+// PAYMENT SETTINGS
+// ------------------------------------------------------------
 
 class PaymentSettingsSheet extends StatefulWidget {
   final double monthlySalary;
@@ -1579,22 +1821,37 @@ class _PaymentSettingsSheetState
     rate.dispose();
     advance.dispose();
     deduction.dispose();
+
     super.dispose();
   }
 
-  double number(String value) =>
-      double.tryParse(value.trim()) ?? 0;
+  double number(String value) {
+    return double.tryParse(value.trim()) ?? 0;
+  }
 
-  int integer(String value) =>
-      int.tryParse(value.trim()) ?? 0;
+  int integer(String value) {
+    return int.tryParse(value.trim()) ?? 0;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset =
+        MediaQuery.of(context).viewInsets.bottom;
+
     return SafeArea(
       child: Container(
-        padding: const EdgeInsets.all(20),
+        constraints: BoxConstraints(
+          maxHeight:
+              MediaQuery.of(context).size.height * .90,
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          20,
+          20,
+          20 + bottomInset,
+        ),
         decoration: const BoxDecoration(
-          color: Color(0xFFF4F8FC),
+          color: Color(0xFFF4F7FB),
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(32),
           ),
@@ -1611,38 +1868,47 @@ class _PaymentSettingsSheetState
                   fontWeight: FontWeight.bold,
                 ),
               ),
+
               const SizedBox(height: 20),
+
               field(
                 'Monthly Salary',
                 salary,
                 Icons.currency_rupee,
               ),
+
               field(
                 'Standard Working Days per Month',
                 days,
                 Icons.calendar_month,
               ),
+
               field(
                 'Normal Working Hours per Day',
                 hours,
                 Icons.access_time,
               ),
+
               field(
                 'Overtime OT Rate per Hour',
                 rate,
                 Icons.timer_outlined,
               ),
+
               field(
                 'Optional Advance',
                 advance,
                 Icons.account_balance_wallet_outlined,
               ),
+
               field(
                 'Deduction',
                 deduction,
                 Icons.remove_circle_outline,
               ),
-              const SizedBox(height: 10),
+
+              const SizedBox(height: 8),
+
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -1662,8 +1928,9 @@ class _PaymentSettingsSheetState
                   icon: const Icon(Icons.save),
                   label: const Text(
                     'Save Configuration',
-                    style:
-                        TextStyle(fontSize: 17),
+                    style: TextStyle(
+                      fontSize: 17,
+                    ),
                   ),
                 ),
               ),
@@ -1680,8 +1947,9 @@ class _PaymentSettingsSheetState
     IconData icon,
   ) {
     return Padding(
-      padding:
-          const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(
+        bottom: 14,
+      ),
       child: TextField(
         controller: controller,
         keyboardType:
@@ -1693,10 +1961,14 @@ class _PaymentSettingsSheetState
           prefixIcon: Icon(icon),
           filled: true,
           fillColor: Colors.white,
-          border:
-              OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(20),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(
+              color: Color(0xFFC8D1D9),
+            ),
           ),
         ),
       ),

@@ -21,7 +21,7 @@ class WorkerPayApp extends StatelessWidget {
 }
 
 // ============================================================
-// ATTENDANCE MODEL
+// ATTENDANCE DATA
 // ============================================================
 
 enum AttendanceStatus {
@@ -62,19 +62,12 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
 
   final Map<String, AttendanceRecord> _attendance = {};
 
-  final List<Widget> _screens = const [
-    SizedBox(),
-    YearScreen(),
-    SummaryScreen(),
-  ];
-
   String _dateKey(DateTime date) {
     return '${date.year}-${date.month}-${date.day}';
   }
 
   Future<void> _openAttendance(DateTime date) async {
     final key = _dateKey(date);
-    final existing = _attendance[key];
 
     final result = await showModalBottomSheet<AttendanceRecord>(
       context: context,
@@ -83,7 +76,7 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
       builder: (_) {
         return AttendanceEntrySheet(
           date: date,
-          existing: existing,
+          existing: _attendance[key],
         );
       },
     );
@@ -104,8 +97,10 @@ class _WorkerPayHomeState extends State<WorkerPayHome> {
         attendance: _attendance,
         onDateTap: _openAttendance,
       );
+    } else if (_selectedIndex == 1) {
+      body = const YearScreen();
     } else {
-      body = _screens[_selectedIndex];
+      body = const SummaryScreen();
     }
 
     return Scaffold(
@@ -190,8 +185,21 @@ class _MonthScreenState extends State<MonthScreen> {
     final now = DateTime.now();
 
     setState(() {
-      _month = DateTime(now.year, now.month, 1);
+      _month = DateTime(
+        now.year,
+        now.month,
+        1,
+      );
     });
+  }
+
+  double _readHours(String value) {
+    final cleaned = value
+        .toUpperCase()
+        .replaceAll('H', '')
+        .trim();
+
+    return double.tryParse(cleaned) ?? 0;
   }
 
   double _hoursTotal() {
@@ -207,11 +215,11 @@ class _MonthScreenState extends State<MonthScreen> {
       final year = int.tryParse(parts[0]);
       final month = int.tryParse(parts[1]);
 
-      if (year != _month.year || month != _month.month) {
-        continue;
+      if (year == _month.year && month == _month.month) {
+        total += _readHours(
+          entry.value.workingHours,
+        );
       }
-
-      total += _readHours(entry.value.workingHours);
     }
 
     return total;
@@ -230,47 +238,55 @@ class _MonthScreenState extends State<MonthScreen> {
       final year = int.tryParse(parts[0]);
       final month = int.tryParse(parts[1]);
 
-      if (year != _month.year || month != _month.month) {
-        continue;
+      if (year == _month.year && month == _month.month) {
+        total += _readHours(
+          entry.value.otHours,
+        );
       }
-
-      total += _readHours(entry.value.otHours);
     }
 
     return total;
   }
 
-  double _readHours(String value) {
-    final cleaned = value
-        .toUpperCase()
-        .replaceAll('H', '')
-        .trim();
+  String _formatHours(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
 
-    return double.tryParse(cleaned) ?? 0;
+    return value.toStringAsFixed(1);
   }
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        20,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _topBar(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           _monthHeader(),
           const SizedBox(height: 14),
           _stats(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 15),
           _calendar(),
           const SizedBox(height: 14),
           _legend(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 15),
           _summary(),
         ],
       ),
     );
   }
+
+  // ----------------------------------------------------------
+  // TOP BAR
+  // ----------------------------------------------------------
 
   Widget _topBar() {
     return Row(
@@ -305,11 +321,16 @@ class _MonthScreenState extends State<MonthScreen> {
     );
   }
 
+  // ----------------------------------------------------------
+  // MONTH HEADER
+  // ----------------------------------------------------------
+
   Widget _monthHeader() {
     return Container(
+      height: 72,
       padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 13,
+        horizontal: 8,
+        vertical: 8,
       ),
       decoration: BoxDecoration(
         color: const Color(0xFF176B78),
@@ -317,7 +338,7 @@ class _MonthScreenState extends State<MonthScreen> {
       ),
       child: Row(
         children: [
-          _arrow(
+          _monthArrow(
             Icons.chevron_left,
             _previousMonth,
           ),
@@ -325,6 +346,7 @@ class _MonthScreenState extends State<MonthScreen> {
             child: GestureDetector(
               onTap: _currentMonth,
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     _monthTitle,
@@ -339,14 +361,14 @@ class _MonthScreenState extends State<MonthScreen> {
                     'Tap for current month',
                     style: TextStyle(
                       color: Color(0xFFD5EDF0),
-                      fontSize: 11,
+                      fontSize: 10,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          _arrow(
+          _monthArrow(
             Icons.chevron_right,
             _nextMonth,
           ),
@@ -355,7 +377,7 @@ class _MonthScreenState extends State<MonthScreen> {
     );
   }
 
-  Widget _arrow(
+  Widget _monthArrow(
     IconData icon,
     VoidCallback onTap,
   ) {
@@ -366,17 +388,21 @@ class _MonthScreenState extends State<MonthScreen> {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: SizedBox(
-          width: 42,
-          height: 42,
+          width: 44,
+          height: 44,
           child: Icon(
             icon,
             color: Colors.white,
-            size: 27,
+            size: 28,
           ),
         ),
       ),
     );
   }
+
+  // ----------------------------------------------------------
+  // STATS
+  // ----------------------------------------------------------
 
   Widget _stats() {
     final hours = _hoursTotal();
@@ -411,33 +437,27 @@ class _MonthScreenState extends State<MonthScreen> {
     );
   }
 
-  String _formatHours(double value) {
-    if (value == value.roundToDouble()) {
-      return value.toInt().toString();
-    }
-
-    return value.toStringAsFixed(1);
-  }
-
   Widget _statCard(
     String title,
     String value,
     IconData icon,
   ) {
     return Container(
+      height: 112,
       padding: const EdgeInsets.symmetric(
         horizontal: 8,
-        vertical: 13,
+        vertical: 12,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             icon,
-            size: 20,
+            size: 21,
             color: const Color(0xFF176B78),
           ),
           const SizedBox(height: 5),
@@ -449,13 +469,11 @@ class _MonthScreenState extends State<MonthScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 17,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               color: Color(0xFF183F49),
             ),
@@ -465,6 +483,10 @@ class _MonthScreenState extends State<MonthScreen> {
     );
   }
 
+  // ----------------------------------------------------------
+  // CALENDAR
+  // ----------------------------------------------------------
+
   Widget _calendar() {
     final firstDay = DateTime(
       _month.year,
@@ -472,20 +494,22 @@ class _MonthScreenState extends State<MonthScreen> {
       1,
     );
 
-    final days = DateTime(
+    final daysInMonth = DateTime(
       _month.year,
       _month.month + 1,
       0,
     ).day;
 
-    final offset = firstDay.weekday % 7;
-    final cells = ((offset + days) / 7).ceil() * 7;
+    final startOffset = firstDay.weekday % 7;
+
+    final totalCells =
+        ((startOffset + daysInMonth + 6) ~/ 7) * 7;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(
-        12,
+        10,
         15,
-        12,
+        10,
         15,
       ),
       decoration: BoxDecoration(
@@ -506,21 +530,26 @@ class _MonthScreenState extends State<MonthScreen> {
             ],
           ),
           const SizedBox(height: 8),
+
+          // FIXED GRID HEIGHT.
+          // This prevents "BOTTOM OVERFLOWED" errors.
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: cells,
+            itemCount: totalCells,
             gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
+              mainAxisExtent: 66,
               mainAxisSpacing: 7,
               crossAxisSpacing: 7,
-              childAspectRatio: 0.92,
             ),
             itemBuilder: (context, index) {
-              final day = index - offset + 1;
+              final day =
+                  index - startOffset + 1;
 
-              if (day < 1 || day > days) {
+              if (day < 1 ||
+                  day > daysInMonth) {
                 return const SizedBox();
               }
 
@@ -539,44 +568,25 @@ class _MonthScreenState extends State<MonthScreen> {
   }
 
   Widget _dayCell(DateTime date) {
-    final record = widget.attendance[_key(date)];
+    final record =
+        widget.attendance[_key(date)];
 
-    Color border = const Color(0xFFE1EAED);
-    Color background = const Color(0xFFF7FAFB);
-    Color textColor = const Color(0xFF294A53);
+    Color border =
+        const Color(0xFFDDE7EA);
+
+    Color background =
+        const Color(0xFFF7FAFB);
+
+    Color textColor =
+        const Color(0xFF294A53);
 
     if (record != null) {
-      switch (record.status) {
-        case AttendanceStatus.present:
-          border = const Color(0xFF35A66F);
-          background = const Color(0xFFEAF8F0);
-          textColor = const Color(0xFF258657);
-          break;
+      final colors =
+          _statusColors(record.status);
 
-        case AttendanceStatus.halfDay:
-          border = const Color(0xFFF2A33A);
-          background = const Color(0xFFFFF5E7);
-          textColor = const Color(0xFFC47711);
-          break;
-
-        case AttendanceStatus.absent:
-          border = const Color(0xFFE25353);
-          background = const Color(0xFFFFEEEE);
-          textColor = const Color(0xFFC63F3F);
-          break;
-
-        case AttendanceStatus.leave:
-          border = const Color(0xFFE0B52C);
-          background = const Color(0xFFFFF9DF);
-          textColor = const Color(0xFFAD8A0D);
-          break;
-
-        case AttendanceStatus.holiday:
-          border = const Color(0xFF8B62C7);
-          background = const Color(0xFFF3EDFB);
-          textColor = const Color(0xFF7048A8);
-          break;
-      }
+      border = colors.$1;
+      background = colors.$2;
+      textColor = colors.$3;
     }
 
     return Material(
@@ -584,64 +594,154 @@ class _MonthScreenState extends State<MonthScreen> {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => widget.onDateTap(date),
+        onTap: () {
+          widget.onDateTap(date);
+        },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: border),
+            border: Border.all(
+              color: border,
+              width: record == null ? 1 : 1.6,
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${date.day}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                ),
-              ),
-              const SizedBox(height: 2),
-              if (record == null)
-                const Text(
-                  '+',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF9AAAB0),
+          child: Center(
+            child: record == null
+                ? _emptyDay(date, textColor)
+                : _filledDay(
+                    record,
+                    date,
+                    textColor,
                   ),
-                )
-              else
-                Text(
-                  record.status == AttendanceStatus.present
-                      ? record.workingHours
-                      : _statusShort(record.status),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: textColor,
-                  ),
-                ),
-            ],
           ),
         ),
       ),
     );
   }
 
-  String _statusShort(AttendanceStatus status) {
+  Widget _emptyDay(
+    DateTime date,
+    Color textColor,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${date.day}',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: textColor,
+          ),
+        ),
+        const SizedBox(height: 2),
+        const Text(
+          '+',
+          style: TextStyle(
+            fontSize: 14,
+            height: 1,
+            color: Color(0xFF9AAAB0),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filledDay(
+    AttendanceRecord record,
+    DateTime date,
+    Color textColor,
+  ) {
+    String label;
+
+    if (record.status ==
+        AttendanceStatus.present) {
+      label = record.workingHours;
+    } else if (record.status ==
+        AttendanceStatus.halfDay) {
+      label = '½';
+    } else if (record.status ==
+        AttendanceStatus.absent) {
+      label = 'A';
+    } else if (record.status ==
+        AttendanceStatus.leave) {
+      label = 'L';
+    } else {
+      label = 'H';
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${date.day}',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: textColor,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: TextStyle(
+            fontSize: 9,
+            height: 1,
+            fontWeight: FontWeight.w800,
+            color: textColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  (Color, Color, Color) _statusColors(
+    AttendanceStatus status,
+  ) {
     switch (status) {
       case AttendanceStatus.present:
-        return 'P';
+        return (
+          const Color(0xFF35A66F),
+          const Color(0xFFEAF8F0),
+          const Color(0xFF258657),
+        );
+
       case AttendanceStatus.halfDay:
-        return '½';
+        return (
+          const Color(0xFFF2A33A),
+          const Color(0xFFFFF5E7),
+          const Color(0xFFC47711),
+        );
+
       case AttendanceStatus.absent:
-        return 'A';
+        return (
+          const Color(0xFFE25353),
+          const Color(0xFFFFEEEE),
+          const Color(0xFFC63F3F),
+        );
+
       case AttendanceStatus.leave:
-        return 'L';
+        return (
+          const Color(0xFFD0A719),
+          const Color(0xFFFFF9DF),
+          const Color(0xFFAD8A0D),
+        );
+
       case AttendanceStatus.holiday:
-        return 'H';
+        return (
+          const Color(0xFF8B62C7),
+          const Color(0xFFF3EDFB),
+          const Color(0xFF7048A8),
+        );
     }
   }
+
+  // ----------------------------------------------------------
+  // LEGEND
+  // ----------------------------------------------------------
 
   Widget _legend() {
     return Wrap(
@@ -672,6 +772,10 @@ class _MonthScreenState extends State<MonthScreen> {
     );
   }
 
+  // ----------------------------------------------------------
+  // MONTHLY SUMMARY
+  // ----------------------------------------------------------
+
   Widget _summary() {
     return Container(
       width: double.infinity,
@@ -681,19 +785,21 @@ class _MonthScreenState extends State<MonthScreen> {
         borderRadius: BorderRadius.circular(21),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           const Text(
             'Monthly Summary',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.w800,
               color: Color(0xFF193F49),
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Working Hours: ${_formatHours(_hoursTotal())}H',
+            'Working Hours: '
+            '${_formatHours(_hoursTotal())}H',
             style: const TextStyle(
               fontSize: 14,
               color: Color(0xFF61747B),
@@ -701,7 +807,8 @@ class _MonthScreenState extends State<MonthScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-            'OT Hours: ${_formatHours(_otTotal())}H',
+            'OT Hours: '
+            '${_formatHours(_otTotal())}H',
             style: const TextStyle(
               fontSize: 14,
               color: Color(0xFF61747B),
@@ -736,9 +843,14 @@ class _AttendanceEntrySheetState
     extends State<AttendanceEntrySheet> {
   late AttendanceStatus _status;
 
-  late TextEditingController _normalController;
-  late TextEditingController _otController;
-  late TextEditingController _noteController;
+  late TextEditingController
+      _normalController;
+
+  late TextEditingController
+      _otController;
+
+  late TextEditingController
+      _noteController;
 
   @override
   void initState() {
@@ -746,17 +858,22 @@ class _AttendanceEntrySheetState
 
     final old = widget.existing;
 
-    _status = old?.status ?? AttendanceStatus.present;
+    _status =
+        old?.status ??
+        AttendanceStatus.present;
 
-    _normalController = TextEditingController(
+    _normalController =
+        TextEditingController(
       text: old?.workingHours ?? '8H',
     );
 
-    _otController = TextEditingController(
+    _otController =
+        TextEditingController(
       text: old?.otHours ?? '0H',
     );
 
-    _noteController = TextEditingController(
+    _noteController =
+        TextEditingController(
       text: old?.note ?? '',
     );
   }
@@ -798,16 +915,19 @@ class _AttendanceEntrySheetState
     final d = widget.date;
 
     return '${weekdays[d.weekday - 1]}, '
-        '${d.day} ${months[d.month - 1]} ${d.year}';
+        '${d.day} ${months[d.month - 1]} '
+        '${d.year}';
   }
 
   void _setNormal(String value) {
     setState(() {
       _normalController.text = value;
+
       _normalController.selection =
           TextSelection.fromPosition(
         TextPosition(
-          offset: _normalController.text.length,
+          offset:
+              _normalController.text.length,
         ),
       );
     });
@@ -816,10 +936,12 @@ class _AttendanceEntrySheetState
   void _setOt(String value) {
     setState(() {
       _otController.text = value;
+
       _otController.selection =
           TextSelection.fromPosition(
         TextPosition(
-          offset: _otController.text.length,
+          offset:
+              _otController.text.length,
         ),
       );
     });
@@ -828,11 +950,17 @@ class _AttendanceEntrySheetState
   @override
   Widget build(BuildContext context) {
     final bottom =
-        MediaQuery.of(context).viewInsets.bottom;
+        MediaQuery.of(context)
+            .viewInsets
+            .bottom;
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.94,
+        maxHeight:
+            MediaQuery.of(context)
+                    .size
+                    .height *
+                0.94,
       ),
       padding: EdgeInsets.fromLTRB(
         16,
@@ -842,13 +970,15 @@ class _AttendanceEntrySheetState
       ),
       decoration: const BoxDecoration(
         color: Color(0xFFF2F6F8),
-        borderRadius: BorderRadius.vertical(
+        borderRadius:
+            BorderRadius.vertical(
           top: Radius.circular(28),
         ),
       ),
       child: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
             _handle(),
             _sheetHeader(),
@@ -857,7 +987,9 @@ class _AttendanceEntrySheetState
             const SizedBox(height: 9),
             _statusGrid(),
             const SizedBox(height: 20),
-            _sectionTitle('Normal Working Hours'),
+            _sectionTitle(
+              'Normal Working Hours',
+            ),
             const SizedBox(height: 9),
             _hoursInput(
               controller: _normalController,
@@ -865,20 +997,33 @@ class _AttendanceEntrySheetState
             ),
             const SizedBox(height: 9),
             _quickButtons(
-              values: const ['4H', '8H', '10H'],
-              selected: _normalController.text,
+              values: const [
+                '4H',
+                '8H',
+                '10H',
+              ],
+              selected:
+                  _normalController.text,
               onSelected: _setNormal,
             ),
             const SizedBox(height: 20),
-            _sectionTitle('Overtime (OT) Hours'),
+            _sectionTitle(
+              'Overtime (OT) Hours',
+            ),
             const SizedBox(height: 9),
             _hoursInput(
               controller: _otController,
               hint: '0H',
             ),
             const SizedBox(height: 9),
+
+            // OT = 0H / 4H / 16H
             _quickButtons(
-              values: const ['0H', '4H', '16H'],
+              values: const [
+                '0H',
+                '4H',
+                '16H',
+              ],
               selected: _otController.text,
               onSelected: _setOt,
             ),
@@ -901,7 +1046,8 @@ class _AttendanceEntrySheetState
         height: 5,
         decoration: BoxDecoration(
           color: const Color(0xFFB8C4C9),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius:
+              BorderRadius.circular(10),
         ),
       ),
     );
@@ -915,7 +1061,8 @@ class _AttendanceEntrySheetState
           height: 48,
           decoration: BoxDecoration(
             color: const Color(0xFFDDEFF2),
-            borderRadius: BorderRadius.circular(15),
+            borderRadius:
+                BorderRadius.circular(15),
           ),
           child: const Icon(
             Icons.event_available_outlined,
@@ -933,8 +1080,10 @@ class _AttendanceEntrySheetState
                 'Attendance Entry',
                 style: TextStyle(
                   fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF193F49),
+                  fontWeight:
+                      FontWeight.w800,
+                  color:
+                      Color(0xFF193F49),
                 ),
               ),
               const SizedBox(height: 2),
@@ -942,21 +1091,29 @@ class _AttendanceEntrySheetState
                 _dateText(),
                 style: const TextStyle(
                   fontSize: 13,
-                  color: Color(0xFF71838A),
+                  color:
+                      Color(0xFF71838A),
                 ),
               ),
             ],
           ),
         ),
         IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.close),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          icon: const Icon(
+            Icons.close,
+            size: 30,
+          ),
         ),
       ],
     );
   }
 
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(
+    String title,
+  ) {
     return Text(
       title,
       style: const TextStyle(
@@ -1016,7 +1173,9 @@ class _AttendanceEntrySheetState
               ),
             ),
             const SizedBox(width: 9),
-            const Expanded(child: SizedBox()),
+            const Expanded(
+              child: SizedBox(),
+            ),
           ],
         ),
       ],
@@ -1028,9 +1187,11 @@ class _AttendanceEntrySheetState
     String title,
     IconData icon,
   ) {
-    final selected = _status == status;
+    final selected =
+        _status == status;
 
-    final color = _statusColor(status);
+    final color =
+        _statusColor(status);
 
     return GestureDetector(
       onTap: () {
@@ -1039,21 +1200,29 @@ class _AttendanceEntrySheetState
         });
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration:
+            const Duration(
+          milliseconds: 150,
+        ),
         height: 58,
-        padding: const EdgeInsets.symmetric(
+        padding:
+            const EdgeInsets.symmetric(
           horizontal: 7,
         ),
         decoration: BoxDecoration(
           color: selected
               ? color.withOpacity(0.10)
               : Colors.white,
-          borderRadius: BorderRadius.circular(15),
+          borderRadius:
+              BorderRadius.circular(15),
           border: Border.all(
             color: selected
                 ? color
-                : const Color(0xFFDDE6E9),
-            width: selected ? 1.7 : 1,
+                : const Color(
+                    0xFFDDE6E9,
+                  ),
+            width:
+                selected ? 1.7 : 1,
           ),
         ),
         child: Row(
@@ -1065,19 +1234,25 @@ class _AttendanceEntrySheetState
               size: 18,
               color: selected
                   ? color
-                  : const Color(0xFF75878D),
+                  : const Color(
+                      0xFF75878D,
+                    ),
             ),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
                 title,
-                overflow: TextOverflow.ellipsis,
+                overflow:
+                    TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w700,
+                  fontWeight:
+                      FontWeight.w700,
                   color: selected
                       ? color
-                      : const Color(0xFF536970),
+                      : const Color(
+                          0xFF536970,
+                        ),
                 ),
               ),
             ),
@@ -1087,53 +1262,72 @@ class _AttendanceEntrySheetState
     );
   }
 
-  Color _statusColor(AttendanceStatus status) {
+  Color _statusColor(
+    AttendanceStatus status,
+  ) {
     switch (status) {
       case AttendanceStatus.present:
         return const Color(0xFF35A66F);
+
       case AttendanceStatus.halfDay:
         return const Color(0xFFF2A33A);
+
       case AttendanceStatus.absent:
         return const Color(0xFFE25353);
+
       case AttendanceStatus.leave:
         return const Color(0xFFD0A719);
+
       case AttendanceStatus.holiday:
         return const Color(0xFF8B62C7);
     }
   }
 
   Widget _hoursInput({
-    required TextEditingController controller,
+    required TextEditingController
+        controller,
     required String hint,
   }) {
     return Container(
+      height: 82,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius:
+            BorderRadius.circular(17),
         border: Border.all(
-          color: const Color(0xFFD8E3E7),
+          color:
+              const Color(0xFFD8E3E7),
         ),
       ),
       child: TextField(
         controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(
+        keyboardType:
+            const TextInputType
+                .numberWithOptions(
           decimal: true,
         ),
         textAlign: TextAlign.center,
         style: const TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF176B78),
+          fontSize: 24,
+          fontWeight:
+              FontWeight.w800,
+          color:
+              Color(0xFF176B78),
         ),
-        decoration: InputDecoration(
+        decoration:
+            InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(
-            color: Color(0xFFAAB8BC),
+          hintStyle:
+              const TextStyle(
+            color:
+                Color(0xFFAAB8BC),
           ),
-          border: InputBorder.none,
+          border:
+              InputBorder.none,
           contentPadding:
-              const EdgeInsets.symmetric(vertical: 15),
-          suffixText: '',
+              const EdgeInsets.symmetric(
+            vertical: 23,
+          ),
         ),
       ),
     );
@@ -1142,46 +1336,68 @@ class _AttendanceEntrySheetState
   Widget _quickButtons({
     required List<String> values,
     required String selected,
-    required ValueChanged<String> onSelected,
+    required ValueChanged<String>
+        onSelected,
   }) {
     return Row(
       children: values.map((value) {
         final isSelected =
-            selected.trim().toUpperCase() ==
+            selected
+                .trim()
+                .toUpperCase() ==
             value.toUpperCase();
 
         return Expanded(
           child: Padding(
             padding: EdgeInsets.only(
-              right: value == values.last ? 0 : 8,
+              right: value == values.last
+                  ? 0
+                  : 8,
             ),
             child: GestureDetector(
-              onTap: () => onSelected(value),
+              onTap: () {
+                onSelected(value);
+              },
               child: AnimatedContainer(
                 duration:
-                    const Duration(milliseconds: 150),
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
+                    const Duration(
+                  milliseconds: 150,
+                ),
+                height: 48,
+                alignment:
+                    Alignment.center,
+                decoration:
+                    BoxDecoration(
                   color: isSelected
-                      ? const Color(0xFF176B78)
+                      ? const Color(
+                          0xFF176B78,
+                        )
                       : Colors.white,
                   borderRadius:
-                      BorderRadius.circular(13),
-                  border: Border.all(
+                      BorderRadius
+                          .circular(13),
+                  border:
+                      Border.all(
                     color: isSelected
-                        ? const Color(0xFF176B78)
-                        : const Color(0xFFD8E3E7),
+                        ? const Color(
+                            0xFF176B78,
+                          )
+                        : const Color(
+                            0xFFD8E3E7,
+                          ),
                   ),
                 ),
                 child: Text(
                   value,
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    fontWeight:
+                        FontWeight.w800,
                     color: isSelected
                         ? Colors.white
-                        : const Color(0xFF526A72),
+                        : const Color(
+                            0xFF526A72,
+                          ),
                   ),
                 ),
               ),
@@ -1196,9 +1412,11 @@ class _AttendanceEntrySheetState
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius:
+            BorderRadius.circular(17),
         border: Border.all(
-          color: const Color(0xFFD8E3E7),
+          color:
+              const Color(0xFFD8E3E7),
         ),
       ),
       child: TextField(
@@ -1206,24 +1424,33 @@ class _AttendanceEntrySheetState
         maxLines: 3,
         textCapitalization:
             TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: 'Optional note...',
-          hintStyle: TextStyle(
-            color: Color(0xFFA0AFB4),
+        decoration:
+            const InputDecoration(
+          hintText:
+              'Optional note...',
+          hintStyle:
+              TextStyle(
+            color:
+                Color(0xFFA0AFB4),
           ),
-          prefixIcon: Padding(
-            padding: EdgeInsets.only(
+          prefixIcon:
+              Padding(
+            padding:
+                EdgeInsets.only(
               left: 14,
               right: 4,
               top: 13,
             ),
             child: Icon(
               Icons.notes_outlined,
-              color: Color(0xFF789097),
+              color:
+                  Color(0xFF789097),
             ),
           ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.all(14),
+          border:
+              InputBorder.none,
+          contentPadding:
+              EdgeInsets.all(14),
         ),
       ),
     );
@@ -1240,31 +1467,54 @@ class _AttendanceEntrySheetState
             AttendanceRecord(
               status: _status,
               workingHours:
-                  _normalController.text.trim().isEmpty
+                  _normalController
+                          .text
+                          .trim()
+                          .isEmpty
                       ? '0H'
-                      : _normalController.text.trim(),
+                      : _normalController
+                          .text
+                          .trim(),
               otHours:
-                  _otController.text.trim().isEmpty
+                  _otController
+                          .text
+                          .trim()
+                          .isEmpty
                       ? '0H'
-                      : _otController.text.trim(),
-              note: _noteController.text.trim(),
+                      : _otController
+                          .text
+                          .trim(),
+              note:
+                  _noteController
+                      .text
+                      .trim(),
             ),
           );
         },
-        icon: const Icon(Icons.check),
+        icon: const Icon(
+          Icons.check,
+        ),
         label: const Text(
           'Save Attendance',
           style: TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w800,
+            fontWeight:
+                FontWeight.w800,
           ),
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF176B78),
-          foregroundColor: Colors.white,
+        style:
+            ElevatedButton.styleFrom(
+          backgroundColor:
+              const Color(
+                  0xFF176B78),
+          foregroundColor:
+              Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(17),
+          shape:
+              RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(
+                    17),
           ),
         ),
       ),
@@ -1273,10 +1523,11 @@ class _AttendanceEntrySheetState
 }
 
 // ============================================================
-// YEAR SCREEN - PART 3
+// YEAR - PART 3
 // ============================================================
 
-class YearScreen extends StatelessWidget {
+class YearScreen
+    extends StatelessWidget {
   const YearScreen({super.key});
 
   @override
@@ -1286,8 +1537,10 @@ class YearScreen extends StatelessWidget {
         'Year Overview',
         style: TextStyle(
           fontSize: 24,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF193F49),
+          fontWeight:
+              FontWeight.w800,
+          color:
+              Color(0xFF193F49),
         ),
       ),
     );
@@ -1295,10 +1548,11 @@ class YearScreen extends StatelessWidget {
 }
 
 // ============================================================
-// SUMMARY SCREEN - PART 3
+// SUMMARY - PART 3
 // ============================================================
 
-class SummaryScreen extends StatelessWidget {
+class SummaryScreen
+    extends StatelessWidget {
   const SummaryScreen({super.key});
 
   @override
@@ -1308,8 +1562,10 @@ class SummaryScreen extends StatelessWidget {
         'Monthly Summary',
         style: TextStyle(
           fontSize: 24,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF193F49),
+          fontWeight:
+              FontWeight.w800,
+          color:
+              Color(0xFF193F49),
         ),
       ),
     );
@@ -1320,7 +1576,8 @@ class SummaryScreen extends StatelessWidget {
 // BOTTOM NAVIGATION
 // ============================================================
 
-class _BottomNavigation extends StatelessWidget {
+class _BottomNavigation
+    extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
@@ -1332,19 +1589,23 @@ class _BottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
+      padding:
+          const EdgeInsets.fromLTRB(
         12,
         8,
         12,
         10,
       ),
-      decoration: const BoxDecoration(
+      decoration:
+          const BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Color(0x14000000),
+            color:
+                Color(0x14000000),
             blurRadius: 12,
-            offset: Offset(0, -3),
+            offset:
+                Offset(0, -3),
           ),
         ],
       ),
@@ -1353,21 +1614,24 @@ class _BottomNavigation extends StatelessWidget {
           Expanded(
             child: _item(
               0,
-              Icons.calendar_month_outlined,
+              Icons
+                  .calendar_month_outlined,
               'Month',
             ),
           ),
           Expanded(
             child: _item(
               1,
-              Icons.calendar_view_month_outlined,
+              Icons
+                  .calendar_view_month_outlined,
               'Year',
             ),
           ),
           Expanded(
             child: _item(
               2,
-              Icons.account_balance_wallet_outlined,
+              Icons
+                  .account_balance_wallet_outlined,
               'Summary',
             ),
           ),
@@ -1381,36 +1645,56 @@ class _BottomNavigation extends StatelessWidget {
     IconData icon,
     String label,
   ) {
-    final selected = selectedIndex == index;
+    final selected =
+        selectedIndex == index;
 
     return GestureDetector(
-      onTap: () => onSelected(index),
-      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        onSelected(index);
+      },
+      behavior:
+          HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.symmetric(
+        duration:
+            const Duration(
+          milliseconds: 180,
+        ),
+        margin:
+            const EdgeInsets.symmetric(
           horizontal: 4,
         ),
-        padding: const EdgeInsets.symmetric(
+        padding:
+            const EdgeInsets.symmetric(
           vertical: 8,
         ),
-        decoration: BoxDecoration(
+        decoration:
+            BoxDecoration(
           color: selected
-              ? const Color(0xFFE1F1F4)
+              ? const Color(
+                  0xFFE1F1F4,
+                )
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(15),
+          borderRadius:
+              BorderRadius.circular(
+                  15),
         ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+              MainAxisSize.min,
           children: [
             Icon(
               icon,
               size: 22,
               color: selected
-                  ? const Color(0xFF176B78)
-                  : const Color(0xFF829197),
+                  ? const Color(
+                      0xFF176B78,
+                    )
+                  : const Color(
+                      0xFF829197,
+                    ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(
+                height: 3),
             Text(
               label,
               style: TextStyle(
@@ -1419,8 +1703,12 @@ class _BottomNavigation extends StatelessWidget {
                     ? FontWeight.w800
                     : FontWeight.w600,
                 color: selected
-                    ? const Color(0xFF176B78)
-                    : const Color(0xFF829197),
+                    ? const Color(
+                        0xFF176B78,
+                      )
+                    : const Color(
+                        0xFF829197,
+                      ),
               ),
             ),
           ],
@@ -1431,10 +1719,11 @@ class _BottomNavigation extends StatelessWidget {
 }
 
 // ============================================================
-// SMALL COMPONENTS
+// WEEK DAYS
 // ============================================================
 
-class _WeekDay extends StatelessWidget {
+class _WeekDay
+    extends StatelessWidget {
   final String text;
 
   const _WeekDay(this.text);
@@ -1442,13 +1731,19 @@ class _WeekDay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Center(
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF71838A),
+      child: SizedBox(
+        height: 18,
+        child: Center(
+          child: Text(
+            text,
+            style:
+                const TextStyle(
+              fontSize: 9,
+              fontWeight:
+                  FontWeight.w800,
+              color:
+                  Color(0xFF71838A),
+            ),
           ),
         ),
       ),
@@ -1456,7 +1751,12 @@ class _WeekDay extends StatelessWidget {
   }
 }
 
-class _LegendItem extends StatelessWidget {
+// ============================================================
+// LEGEND
+// ============================================================
+
+class _LegendItem
+    extends StatelessWidget {
   final Color color;
   final String title;
 
@@ -1468,23 +1768,29 @@ class _LegendItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize:
+          MainAxisSize.min,
       children: [
         Container(
           width: 9,
           height: 9,
-          decoration: BoxDecoration(
+          decoration:
+              BoxDecoration(
             color: color,
-            shape: BoxShape.circle,
+            shape:
+                BoxShape.circle,
           ),
         ),
         const SizedBox(width: 5),
         Text(
           title,
-          style: const TextStyle(
+          style:
+              const TextStyle(
             fontSize: 11,
-            color: Color(0xFF61747B),
-            fontWeight: FontWeight.w600,
+            color:
+                Color(0xFF61747B),
+            fontWeight:
+                FontWeight.w600,
           ),
         ),
       ],

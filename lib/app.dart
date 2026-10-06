@@ -1,4 +1,4 @@
-gimport 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 class WorkerPayApp extends StatelessWidget {
   const WorkerPayApp({super.key});

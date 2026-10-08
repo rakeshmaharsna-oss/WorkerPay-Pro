@@ -19,6 +19,10 @@ jobs:
       - name: Create Android project
         run: flutter create --platforms=android --project-name worker_pay_pro .
 
+      - name: Configure AdMob App ID
+        run: |
+          sed -i '/<application/a\        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-5733288202268497~2388066516"/>' android/app/src/main/AndroidManifest.xml
+
       - name: Get dependencies
         run: flutter pub get
 

@@ -21,7 +21,7 @@ jobs:
 
       - name: Configure AdMob App ID
         run: |
-          sed -i '/<application/a\        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-5733288202268497~2388066516"/>' android/app/src/main/AndroidManifest.xml
+          python3 -c "from pathlib import Path; p=Path('android/app/src/main/AndroidManifest.xml'); s=p.read_text(); s=s.replace('</application>', '        <meta-data android:name=\"com.google.android.gms.ads.APPLICATION_ID\" android:value=\"ca-app-pub-5733288202268497~2388066516\"/>\n    </application>'); p.write_text(s)"
 
       - name: Get dependencies
         run: flutter pub get

@@ -10,32 +10,25 @@ class BannerAdWidget extends StatefulWidget {
 
 class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _bannerAd;
-  bool _isLoaded = false;
+  bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
 
     _bannerAd = BannerAd(
-      // Google official TEST Banner Ad Unit ID
       adUnitId: 'ca-app-pub-3940256099942544/6300978111',
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
-          if (mounted) {
-            setState(() {
-              _isLoaded = true;
-            });
-          }
+          if (!mounted) return;
+          setState(() {
+            _loaded = true;
+          });
         },
         onAdFailedToLoad: (ad, error) {
           ad.dispose();
-          if (mounted) {
-            setState(() {
-              _isLoaded = false;
-            });
-          }
         },
       ),
     );
@@ -51,8 +44,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isLoaded || _bannerAd == null) {
-      return const SizedBox.shrink();
+    if (!_loaded || _bannerAd == null) {
+      return const SizedBox(height: 0);
     }
 
     return SizedBox(

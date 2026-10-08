@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'banner_ad_widget.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -654,7 +655,13 @@ class _HomeState extends State<Home> {
           ],
         ),
       ),
-      bottomNavigationBar: bottomNav(),
+      bottomNavigationBar: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    const BannerAdWidget(),
+    bottomNav(),
+  ],
+),
     );
   }
 

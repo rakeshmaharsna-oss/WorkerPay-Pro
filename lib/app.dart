@@ -940,7 +940,7 @@ class _HomeState extends State<Home> {
               crossAxisCount: 7,
               crossAxisSpacing: 3,
               mainAxisSpacing: 3,
-              mainAxisExtent: 55,
+              mainAxisExtent: 66,
             ),
             itemBuilder: (_, index) {
               if (index < offset ||

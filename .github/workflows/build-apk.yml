@@ -9,30 +9,73 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Setup Java 17 (Important)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.2'
           channel: stable
+          cache: true
 
+      # 4. Check Java and Flutter versions
+      - name: Check Environment
+        run: |
+          java -version
+          flutter --version
+          flutter doctor -v
+
+      # 5. Create Android project
       - name: Create Android project
         run: flutter create --platforms=android --project-name worker_pay_pro .
 
+      # 6. Configure AdMob App ID
       - name: Configure AdMob App ID
         run: |
-          python3 -c "from pathlib import Path; p=Path('android/app/src/main/AndroidManifest.xml'); s=p.read_text(); s=s.replace('</application>', '        <meta-data android:name=\"com.google.android.gms.ads.APPLICATION_ID\" android:value=\"ca-app-pub-5733288202268497~2388066516\"/>\n    </application>'); p.write_text(s)"
+          python3 - <<'PY'
+          from pathlib import Path
 
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text()
+
+          app_id = "ca-app-pub-5733288202268497~2388066516"
+          metadata = '        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="' + app_id + '"/>'
+
+          if "com.google.android.gms.ads.APPLICATION_ID" not in content:
+              content = content.replace("</application>", metadata + "\n    </application>")
+              manifest.write_text(content)
+
+          if "com.google.android.gms.ads.APPLICATION_ID" not in manifest.read_text():
+              raise SystemExit("AdMob App ID configuration failed")
+          PY
+
+      # 7. Get dependencies
       - name: Get dependencies
         run: flutter pub get
 
+      # 8. Check Dart code
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      # 9. Build APK
       - name: Build APK
         run: flutter build apk --debug --verbose
 
+      # 10. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: worker-pay-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

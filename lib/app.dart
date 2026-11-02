@@ -1,4 +1,4 @@
-import 'dart:convert';
+jimport 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'banner_ad_widget.dart';
@@ -940,7 +940,7 @@ class _HomeState extends State<Home> {
               crossAxisCount: 7,
               crossAxisSpacing: 3,
               mainAxisSpacing: 3,
-              mainAxisExtent: 66,
+              mainAxisExtent: 55,
             ),
             itemBuilder: (_, index) {
               if (index < offset ||

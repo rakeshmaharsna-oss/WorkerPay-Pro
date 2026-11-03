@@ -4,20 +4,27 @@ name: Build Worker Pay APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -25,19 +32,40 @@ jobs:
           channel: stable
           cache: true
 
+      # 4. Check environment
       - name: Check Environment
         run: |
           java -version
           flutter --version
+          flutter doctor -v
 
+      # 5. Verify app icon
+      - name: Verify App Icon
+        run: |
+          test -f assets/icon/worker_pay_icon.png || {
+            echo "Worker Pay icon image not found!"
+            exit 1
+          }
+
+      # 6. Create Android project
       - name: Create Android project
         run: flutter create --platforms=android --project-name worker_pay_pro .
 
+      # 7. Configure app launcher icon
       - name: Configure App Icon
         run: |
-          dart pub global activate flutter_launcher_icons
-          dart pub global run flutter_launcher_icons:main --image_path=assets/icon/worker_pay_icon.png
+          cat > flutter_launcher_icons.yaml <<'EOF'
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: "assets/icon/worker_pay_icon.png"
+            min_sdk_android: 21
+          EOF
 
+          dart pub global activate flutter_launcher_icons
+          dart pub global run flutter_launcher_icons -f flutter_launcher_icons.yaml
+
+      # 8. Configure AdMob App ID
       - name: Configure AdMob App ID
         run: |
           python3 - <<'PY'
@@ -62,17 +90,29 @@ jobs:
 
           if "com.google.android.gms.ads.APPLICATION_ID" not in manifest.read_text():
               raise SystemExit("AdMob App ID configuration failed")
+
+          print("AdMob App ID configured successfully.")
           PY
 
+      # 9. Get Flutter dependencies
       - name: Get dependencies
         run: flutter pub get
 
+      # 10. Analyze Dart code
       - name: Analyze Flutter code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/
 
+      # 11. Build debug APK
       - name: Build APK
         run: flutter build apk --debug --verbose
 
+      # 12. Verify APK
+      - name: Verify APK
+        run: |
+          test -f build/app/outputs/flutter-apk/app-debug.apk
+          ls -lh build/app/outputs/flutter-apk/app-debug.apk
+
+      # 13. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

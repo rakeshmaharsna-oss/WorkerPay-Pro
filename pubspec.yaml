@@ -1,3 +1,4 @@
+
 name: worker_pay_pro
 description: Offline worker attendance and payment app.
 publish_to: "none"
@@ -13,7 +14,7 @@ dependencies:
 
   shared_preferences: ^2.5.3
   google_mobile_ads: ^6.0.0
-  
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -22,3 +23,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/icon/worker_pay_icon.png
